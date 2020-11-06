@@ -18,9 +18,8 @@ from keras.callbacks import TensorBoard
 from tensorflow.summary import FileWriter
 import tensorflow
 
-
-OBSERVATION_SPACE_SIZE = (1,22)
-ACTION_SPACE_SIZE = 2
+OBSERVATION_SPACE_SIZE = (1, 91)
+ACTION_SPACE_SIZE = 54
 DISCOUNT = 0.99
 
 REPLAY_MEMORY_SIZE = 100  # How many last steps to keep for model training
@@ -33,6 +32,230 @@ MIN_REWARD = 0  # For model save
 
 #  Stats settings
 AGGREGATE_STATS_EVERY = 2  # episodes
+
+def find_neighbors(node_index):
+  """Find three neighboring nodes of a given node"""
+
+  # Convert node index number hex coordinates
+  index_as_hex = str(hex(node_index))
+
+  # Get decimal value for each axis
+  coordinate_1_dec = int(index_as_hex[2], 16)
+  if len(index_as_hex) < 4:
+    coordinate_2_dec = 0
+  else:
+    coordinate_2_dec = int(index_as_hex[3], 16)
+
+  # Find neighbor decimal coordinates
+  l_coordinates_dec = [coordinate_1_dec - 1, coordinate_2_dec - 1]
+  r_coordinates_dec = [coordinate_1_dec + 1, coordinate_2_dec + 1]
+  if coordinate_2_dec % 2 == 0: #check direction of vertical neighbor
+    v_coordinates_dec = [coordinate_1_dec - 1, coordinate_2_dec + 1]
+  else:
+    v_coordinates_dec = [coordinate_1_dec + 1, coordinate_2_dec - 1]
+
+  # Make list of all neighbors
+  neighbors = []
+  coordinates_lrv = [l_coordinates_dec, r_coordinates_dec, v_coordinates_dec]
+  for coordinate_pair in coordinates_lrv:
+    hex_coordinate_string = ''
+    for coordinate in coordinate_pair:
+      current_hex_coordinate = str(hex(coordinate))
+      hex_coordinate_string += current_hex_coordinate[2]
+    neighbors.append(hex_coordinate_string)
+
+  return(neighbors)
+
+
+def simplify_ownership(list_of_node_ownership):
+  """Turn 256 element ownership list into 16 element vector"""
+
+  #Generate empty output
+  simple_owners = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+  # Calculate available nodes
+  for index, occupancy in enumerate(list_of_node_ownership):
+    if occupancy > 0:
+      # Get decimal value for each axis
+      node_string = str(hex(index))
+      if len(node_string) < 4:
+        coordinate_1_dec = 0
+        coordinate_2_dec = int(node_string[2], 16)
+      else:
+        coordinate_1_dec = int(node_string[2], 16)
+        coordinate_2_dec = int(node_string[3], 16)
+
+      # Write to player 1 slots
+      if occupancy == 1:
+        if simple_owners[0] == 0:
+          simple_owners[0] = coordinate_1_dec
+          simple_owners[1] = coordinate_2_dec
+        else:
+          simple_owners[14] = coordinate_1_dec
+          simple_owners[16] = coordinate_2_dec
+
+      # Write to player 2 slots  
+      if occupancy == 3:
+        if simple_owners[2] == 0:
+          simple_owners[2] = coordinate_1_dec
+          simple_owners[3] = coordinate_2_dec
+        else:
+          simple_owners[12] = coordinate_1_dec
+          simple_owners[13] = coordinate_2_dec
+
+      # Write to player 3 slots 
+      if occupancy == 5:
+        if simple_owners[4] == 0:
+          simple_owners[4] = coordinate_1_dec
+          simple_owners[5] = coordinate_2_dec
+        else:
+          simple_owners[10] = coordinate_1_dec
+          simple_owners[11] = coordinate_2_dec
+
+      # Write to player 4 slots 
+      if occupancy == 7:
+        if simple_owners[6] == 0:
+          simple_owners[6] = coordinate_1_dec
+          simple_owners[7] = coordinate_2_dec
+        else:
+          simple_owners[8] = coordinate_1_dec
+          simple_owners[9] = coordinate_2_dec
+  print(simple_owners)
+  return simple_owners
+
+def list_all_nodes():
+  # List all the game hexes
+  game_hexes = ['33', '35', '37', \
+                '53', '55', '57', '59', \
+                '73', '75', '77', '79', '7b', \
+                '95', '97', '99', '9b', \
+                'b7', 'b9', 'bb']
+
+  # How to generate the coordinates for each of the 6 nodes from hex coordinate
+  node_shifts = [[0, 1], [1, 2], [2, 1], [1,0], [0, -1], [-1, 0]]
+
+  # Populate list of all possible nodes
+  nodes = []
+  for game_hex in game_hexes:
+    coordinates = [int(game_hex[0], 16), int(game_hex[1], 16)]
+    for node_shift in node_shifts:
+      encoded_node = ''
+      node_coordinate_1 = coordinates[0] + node_shift[0]
+      node_coordinate_2 = coordinates[1] + node_shift[1]
+      part1 = str(hex(node_coordinate_1))
+      part2 = str(hex(node_coordinate_2))
+      encoded_node += part1[2]
+      encoded_node += part2[2]
+
+      if encoded_node not in nodes:
+        nodes.append(encoded_node)
+
+  return nodes
+
+
+def list_available_nodes(node_validity_message):
+  """Calculate available nodes"""
+
+  available_nodes = list_all_nodes()  # start with all possible nodes
+
+  for index, occupancy in enumerate(node_validity_message):
+    if occupancy == 0:
+      # Find node hex coordinates 
+      node_string = str(hex(index))
+      building_node = node_string[2:4]
+
+      # Remove invalid nodes from list
+      neighbor_nodes = find_neighbors(index)
+      available_nodes.remove(building_node)
+      for neighbor_node in neighbor_nodes:
+        if neighbor_node in available_nodes:
+          available_nodes.remove(neighbor_node)
+
+  print(available_nodes)
+  return available_nodes
+
+
+def availability_filter(node_validity_message):
+  """Generate binary mask that is 0 at unavailable nodes"""
+
+  all_nodes = list_all_nodes()
+  available_nodes = list_available_nodes(node_validity_message)
+
+  # Generate Availability filter
+  available_filter = np.zeros([54,1])
+  for index, node in enumerate(all_nodes):
+    if node in available_nodes:
+      available_filter[index, 0] = 1
+
+  return available_filter
+
+def get_message_indices():
+  """Generate the right indices to divide up the message"""
+
+  # Player number
+  player_num_ind = 1
+
+  # Tile type and dice indices
+  tile_nums = list(range(37))
+  tile_type_ind = [(tile+1)*2 for tile in tile_nums]
+  tile_dice_ind = [tile+1 for tile in tile_type_ind]
+
+  # Get node ownership indices
+  node_ownership_ind = list(range(256))
+  node_ownership_ind = [tile+76 for tile in node_ownership_ind]
+
+  # Get node Validity indices
+  node_validity_ind = list(range(256))
+  node_validity_ind = [tile+332 for tile in node_validity_ind]
+
+  # Get road network indices
+  road_ownership_ind = list(range(255))
+  road_ownership_ind = [tile+588 for tile in road_ownership_ind]
+
+  return player_num_ind, tile_type_ind, tile_dice_ind, node_ownership_ind, node_validity_ind, road_ownership_ind
+
+def interpret_settlement_init_message(msg_args):
+
+  #Get all relevant indices
+  player_num_ind, tile_type_ind, tile_dice_ind, node_ownership_ind, node_validity_ind, road_ownership_ind = get_message_indices()
+
+  # Player number
+  player_num = int(msg_args[player_num_ind])
+
+  # Tile types
+  tile_types = []
+  for index in tile_type_ind:
+    tile_types.append(int(msg_args[index]))
+
+  # Tile dice
+  tile_dice = []
+  for index in tile_dice_ind:
+    tile_dice.append(int(msg_args[index]))
+
+  # Node ownership
+  node_ownership = []
+  for index in node_ownership_ind:
+    node_ownership.append(int(msg_args[index]))
+  simplified_ownership = simplify_ownership(node_ownership)
+
+  # Node validity
+  node_validity = []
+  for index in node_validity_ind:
+    node_validity.append(int(msg_args[index]))
+
+  # Road ownership
+  road_ownership = []
+  for index in road_ownership_ind:
+    road_ownership.append(int(msg_args[index]))
+
+  return player_num, tile_types, tile_dice, node_ownership, node_validity, road_ownership
+
+def action_to_255(action):
+  all_nodes_list = list_all_nodes()
+  node_of_choice = all_nodes_list[action]
+  java_action = int(node_of_choice, 16)
+
+  return java_action
 
 # Own Tensorboard class, used to ignore lots of the operations done per call to fit()
 class ModifiedTensorBoard(TensorBoard):
@@ -91,7 +314,7 @@ class DQNAgent:
     def create_model(self):
         #Create model for generating Q values
         model = Sequential()
-        model.add(Conv1D(filters=256, kernel_size=1, input_shape=OBSERVATION_SPACE_SIZE, batch_input_shape=(MINIBATCH_SIZE, 1, 22)))
+        model.add(Conv1D(filters=256, kernel_size=1, input_shape=OBSERVATION_SPACE_SIZE, batch_input_shape=(MINIBATCH_SIZE, 1, 91)))
         model.add(Activation("relu"))
         model.add(MaxPooling1D(1))
         model.add(Dropout(0.2))
@@ -205,30 +428,71 @@ class JSettlersServer:
                 length_of_message = int.from_bytes(conn.recv(2), byteorder='big')
                 msg = conn.recv(length_of_message).decode("UTF-8")
                 print("Considering Trade ... ")
-                action = self.handle_msg(msg)
-                conn.send((str(action) + '\n').encode(encoding='UTF-8'))
-                print("Result: " + str(action) + "\n")
+                action, java_action = self.handle_msg(msg)
+                conn.send((str(java_action) + '\n').encode(encoding='UTF-8'))
+                print("Result: python = " + str(action) + " java = " + str(java_action) + "\n")
             except socket.timeout:
                 print("Timeout or error occured. Exiting ... ")
                 break
 
-    def get_action(self, state):
+    def get_action(self, state, node_validity):
         state = np.array(state)
-        state = state.reshape((1, 22))
-        if np.random.random() > self.agent.epsilon:
-            action = np.argmax(self.agent.get_qs(state))
-        else:
-            action = np.random.randint(0, ACTION_SPACE_SIZE)
-        return action
+        state = state.reshape((1, 91))
 
+        # get list of available actions
+        available_filter = availability_filter(node_validity)
+
+        if np.random.random() > self.agent.epsilon:
+            # action = np.argmax(self.agent.get_qs(state))
+            action_probs = np.copy(self.agent.get_qs(state))
+
+            # Set impossible action probability to zero
+            for index, probability in enumerate(action_probs):
+                action_probs[index] = probability*available_filter[index]
+
+            # Select best action
+            action = np.argmax(action_probs)
+        else:
+            # Find a random possible action
+            possible_actions = []
+            for index, validity in enumerate(available_filter):
+                if validity == 1:
+                    possible_actions.append(index)  
+            action = random.choice(possible_actions)
+        java_action = action_to_255(action)
+        python_action = action
+        return python_action, java_action
 
 
     def handle_msg(self, msg):
         self.agent.tensorboard.step = self.curr_episode
         print("Episode: ", self.curr_episode)
+        print(msg)
         msg_args = msg.split("|")
 
-        if msg_args[0] == "trade": #We're still playing a game; update our agent based on the rewards returned and take an action
+        if msg_args[0] == "init_settlement":
+          player_num, tile_types, tile_dice, node_ownership, node_validity, road_ownership = interpret_settlement_init_message(msg_args)
+          simplified_ownership = simplify_ownership(node_ownership)
+          feat_vector = np.array([player_num] + tile_types + tile_dice + simplified_ownership)
+
+          if self.prev_vector is not None:    # If we have a previous state, run a train step on the agent for the last action taken
+              self.agent.update_replay_memory((self.prev_vector, self.last_action, 0, feat_vector, False))
+              self.agent.train(False)
+          else:
+              print("First step. Ignoring training ... ")
+          # Update actions so that on the next step, we'll train on these actions
+          action, java_action = self.get_action(feat_vector, node_validity)
+          self.prev_vector = feat_vector
+          self.last_action = action
+          return action, java_action
+
+        elif msg_args[0] == "just_checking":
+            player_num, tile_types, tile_dice, node_ownership, node_validity, road_ownership = interpret_settlement_init_message(msg_args)
+            simplified_ownership = simplify_ownership(node_ownership)
+
+
+        elif msg_args[0] == "trade": #We're still playing a game; update our agent based on the rewards returned and take an action
+            print ("Evalulating trade: (YOU SHOULDN'T SEE THIS)")
             my_vp = int(msg_args[1])
             opp_vp = int(msg_args[2])
             my_res = [int(x) for x in msg_args[3].split(",")]
@@ -299,7 +563,7 @@ class JSettlersServer:
             else:
                 print("Unfinished game; ignoring result ...\n\n")
 
-            return None
+        return None, None
 
 
     def write_result(self, place):
@@ -313,5 +577,5 @@ class JSettlersServer:
 
 if __name__ == "__main__":
     dqnagent = DQNAgent()
-    server = JSettlersServer("localhost", 2004, dqnagent, timeout=120)
+    server = JSettlersServer("localhost", 2004, dqnagent, timeout=1200)
     server.run()
