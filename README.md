@@ -1,5 +1,8 @@
-# CS7641-term-project
-Using reinforcement learning to solve Settlers of Catan
+# CSI-5800-semester-project
+Using reinforcement learning to find ideal actions in Settlers of Catan
+
+## Purpose
+This fork of the original CS7641-QSettlers project seeks to use Reinforcement Learning in order to have an agent learn a strong strategy for the placement of initial settlements in a game of Settlers of Catan. 
 
 ## JSettlers:
 
