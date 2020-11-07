@@ -19,11 +19,7 @@
  */
 package soc.robot.sample3p;
 
-import soc.game.SOCGame;
-import soc.game.SOCGameOption;
-import soc.game.SOCResourceConstants;
-import soc.game.SOCResourceSet;
-import soc.game.SOCTradeOffer;
+import soc.game.*;
 import soc.message.SOCMessage;
 import soc.robot.SOCRobotBrain;
 import soc.robot.SOCRobotClient;
@@ -34,7 +30,11 @@ import soc.util.SOCRobotParameters;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 
+import java.lang.reflect.Array;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Sample of a trivially simple "third-party" subclass of {@link SOCRobotBrain}
@@ -169,73 +169,328 @@ public class Sample3PBrain extends SOCRobotBrain
 
     }
 
+//    @Override
+//    protected int considerOffer(SOCTradeOffer offer)
+//    {
+//
+//        if (! offer.getTo()[getOurPlayerNumber()])
+//        {
+//            return SOCRobotNegotiator.IGNORE_OFFER;
+//        }
+//
+//        String decision = "0";
+//
+//        try{
+//
+//            //Get & format my victory points
+//            String my_vp = Integer.toString(getPlayerVP(getOurPlayerNumber()));
+//            String opp_vp = Integer.toString(getPlayerVP(offer.getFrom()));
+//
+//            //Get & format current resource set for opponent
+//            String opponent_resources = formatPlayerResources(offer.getFrom());
+//
+//            //Get & format current resource set for our agent
+//            String my_resources = formatPlayerResources(getOurPlayerNumber());
+//
+//            //Get & format trade contents
+//            String getData = extractOfferGetData(offer);
+//            String giveData = extractOfferGiveData(offer);
+//
+//
+//            //Pass game state info to DQN server
+//            servercon = new Socket("localhost", 2004);
+//            servercon.setSoTimeout(300000);
+//            serverin = new DataInputStream(servercon.getInputStream());
+//            serverout = new DataOutputStream(servercon.getOutputStream());
+//            String msg = "trade|" + my_vp + "|" + opp_vp + "|" + my_resources + "|" + opponent_resources + "|" + getData + "|" + giveData;
+//            serverout.writeUTF(msg);
+//
+//            //Receive decision from DQN server
+//            decision = serverin.readLine();
+//
+//            serverout.flush();
+//            serverout.close();
+//            serverin.close();
+//            servercon.close();
+//        }
+//         catch(Exception e){
+//            System.err.println("Whoops! Connection with server lost ... ");
+//         }
+//
+//        if (decision.contains("0")){
+//            System.err.println(decision);
+//            System.err.println("Rejecting offer ... ");
+//           return SOCRobotNegotiator.REJECT_OFFER;
+//        }
+//        else{
+//            System.err.println(decision);
+//            System.err.println("Accepting offer ... ");
+//            return SOCRobotNegotiator.ACCEPT_OFFER;
+//        }
+//
+//        /*
+//        final SOCResourceSet res = offer.getGiveSet();
+//        if (! (res.contains(SOCResourceConstants.CLAY) || res.contains(SOCResourceConstants.SHEEP)))
+//        {
+//            return SOCRobotNegotiator.REJECT_OFFER;
+//        }
+//
+//        return super.considerOffer(offer);
+//        */
+//    }
+
     @Override
-    protected int considerOffer(SOCTradeOffer offer)
+    protected void placeIfExpectPlacing()
     {
-        
-        if (! offer.getTo()[getOurPlayerNumber()])
+        // msg = init_settlement | playerIndex | tileInfo[74] | nodeOwnership[256] | nodeValidity[256] | roadOwnership[256]
+        // playerIndex
+        // Just an integer
+
+        // tileInfo
+        // 74 total (37 tiles, 2 numbers per tile)
+        // Loop over tiles 0-37
+        // Get type -> add to string
+        // Delimiter
+        // Get dice roll -> add to string
+
+        // nodeOwnership
+        // 256 total
+        // range: 0-8
+        // To know who has what currently
+        // 2 values per player, one for city, one for settlement
+        // 0 = unclaimed
+        // 1-2 = player 1, settlement = 1, city = 2
+        // etc...
+
+        // nodeValidity
+        // 256 total
+        // range: 0-1 (binary)
+        // 0 = not valid
+        // 1 = valid
+        // For filtering outputs, to get the highest valued node that's a valid choice
+
+        // roadOwnership
+        // 256 total
+        // range: 0-4
+        // 0 = unowned
+        // 1-4 = player ID of owner
+        // To know which direction players can expand
+
+        if (waitingForGameState)
+            return;
+
+        String serverDecision;
+        switch (game.getGameState())
         {
-            return SOCRobotNegotiator.IGNORE_OFFER;
+            case SOCGame.START1A:
+                {
+                    expectSTART1A = false;
+//                    System.out.println("START1A");
+                    if ((!waitingForOurTurn) && ourTurn && (!(expectPUTPIECE_FROM_START1A && (counter < 4000)))) {
+                        expectPUTPIECE_FROM_START1A = true;
+                        counter = 0;
+                        waitingForGameState = true;
+//                        System.out.println("Inside 1A");
+                        serverDecision = sendMessageToDQN("init_settlement");
+
+                        if (!serverDecision.equals("None")) {
+                            try {
+                                final int node = Integer.parseInt(serverDecision);
+//                                System.out.println(node);
+//                                sendMessageToDQN("just_checking");
+                                placeFirstSettlement(node);
+//                                sendMessageToDQN("just_checking");
+                            } catch (Exception e) {
+                                System.err.println("Whoops! Couldn't convert returned message into integer when building first settlement ... ");
+                            }
+                        } else {  // Empty message returned, make random choice
+                            System.err.println("No decision received for first settlement, using built in system ...");
+                            super.placeIfExpectPlacing();
+                        }
+                    }
+                }
+                break;
+
+            case SOCGame.START2A:
+                {
+                    expectSTART2A = false;
+//                    System.out.println("START2A");
+                    if ((!waitingForOurTurn) && ourTurn && (!(expectPUTPIECE_FROM_START2A && (counter < 4000)))) {
+                        expectPUTPIECE_FROM_START2A = true;
+                        counter = 0;
+                        waitingForGameState = true;
+//                        System.out.println("Inside 2A");
+                        serverDecision = sendMessageToDQN("init_settlement");
+
+                        if (!serverDecision.equals("None")) {
+                            try {
+                                final int node = Integer.parseInt(serverDecision);
+//                                System.out.println(node);
+//                                sendMessageToDQN("just_checking");
+                                placeInitSettlement(node);
+//                                sendMessageToDQN("just_checking");
+                            } catch (Exception e) {
+                                System.err.println("Whoops! Couldn't convert returned message into integer when building second settlement ... ");
+                            }
+                        } else {  // Empty message returned, make random choice
+                            System.err.println("No decision received for second settlement, using built in system ...");
+                            super.placeIfExpectPlacing();
+                        }
+                    }
+                }
+            break;
+
+            default:
+                super.placeIfExpectPlacing();
         }
+    }
 
-        String decision = "0";
+    protected String sendMessageToDQN(String messageTag)
+    {
+        Integer id = getOurPlayerNumber();
+        String stringID =  id.toString();
 
-        try{
+        String tileInfo = generateTileInfo();
+        String nodeOwnership = generateNodeOwnership();
+        String nodeValidity = generateNodeValidity();
+        String roadOwnership = generateRoadOwnership();
 
-            //Get & format my victory points
-            String my_vp = Integer.toString(getPlayerVP(getOurPlayerNumber()));
-            String opp_vp = Integer.toString(getPlayerVP(offer.getFrom()));
+        String msg = messageTag + "|" + stringID + "|" + tileInfo + "|" + nodeOwnership + "|" + nodeValidity + "|" + roadOwnership;
+        String serverReturn = "";
 
-            //Get & format current resource set for opponent
-            String opponent_resources = formatPlayerResources(offer.getFrom());
-
-            //Get & format current resource set for our agent
-            String my_resources = formatPlayerResources(getOurPlayerNumber());
-
-            //Get & format trade contents
-            String getData = extractOfferGetData(offer);
-            String giveData = extractOfferGiveData(offer);
-            
-
-            //Pass game state info to DQN server
+        try {
             servercon = new Socket("localhost", 2004);
             servercon.setSoTimeout(300000);
             serverin = new DataInputStream(servercon.getInputStream());
             serverout = new DataOutputStream(servercon.getOutputStream());
-            String msg = "trade|" + my_vp + "|" + opp_vp + "|" + my_resources + "|" + opponent_resources + "|" + getData + "|" + giveData;
             serverout.writeUTF(msg);
 
             //Receive decision from DQN server
-            decision = serverin.readLine();
+            serverReturn = serverin.readLine();
 
             serverout.flush();
-            serverout.close(); 
-            serverin.close();   
-            servercon.close();  
-        }
-         catch(Exception e){
+            serverout.close();
+            serverin.close();
+            servercon.close();
+        } catch (Exception e) {
             System.err.println("Whoops! Connection with server lost ... ");
-         }
-
-        if (decision.contains("0")){
-            System.err.println(decision);
-            System.err.println("Rejecting offer ... ");
-           return SOCRobotNegotiator.REJECT_OFFER;
-        }
-        else{
-            System.err.println(decision);
-            System.err.println("Accepting offer ... ");
-            return SOCRobotNegotiator.ACCEPT_OFFER;
         }
 
-        /*
-        final SOCResourceSet res = offer.getGiveSet();
-        if (! (res.contains(SOCResourceConstants.CLAY) || res.contains(SOCResourceConstants.SHEEP)))
-        {
-            return SOCRobotNegotiator.REJECT_OFFER;
+        return serverReturn;
+    }
+
+    protected String generateTileInfo()
+    {
+        String tileInfo = "";
+        Integer type, roll;
+        SOCBoard board = game.getBoard();
+
+        for (int i = 0; i < 37; i++) {
+            type = board.getHexTypeFromNumber(i);
+            roll = board.getNumberOnHexFromNumber(i);
+            tileInfo += type.toString() + "|" + roll.toString();
+            if (i < 36) {
+                tileInfo += "|";
+            }
         }
 
-        return super.considerOffer(offer);
-        */
+        return tileInfo;
+    }
+
+    protected String generateNodeOwnership()
+    {
+        String nodeOwnership = "";
+        SOCBoard board = game.getBoard();
+        List<SOCSettlement> ownedSettlements =  board.getSettlements();
+        List<SOCCity> ownedCities = board.getCities();
+        List<Integer> nodes = new ArrayList<Integer>(Collections.nCopies(256, 0));
+
+        for (SOCSettlement settlement : ownedSettlements) {
+            int coord = settlement.getCoordinates();
+            Integer playerID = ((settlement.getPlayerNumber() + 1) * 2) - 1;  // 1, 3, 5, 7
+
+            nodes.set(coord, playerID);
+        }
+
+        for (SOCCity city : ownedCities) {
+            int coord = city.getCoordinates();
+            System.out.print(coord);
+            Integer playerID = (city.getPlayerNumber() + 1) * 2;  // 2, 4, 6, 8
+
+            nodes.set(coord, playerID);
+        }
+
+        for (int i = 0; i < nodes.size(); i++) {
+            nodeOwnership += nodes.get(i).toString();
+            if (i < nodes.size() - 1) {
+                nodeOwnership += "|";
+            }
+        }
+
+        return nodeOwnership;
+    }
+
+    protected String generateNodeValidity()
+    {
+        String nodeValidity = "";
+        SOCBoard board = game.getBoard();
+        List<SOCSettlement> ownedSettlements =  board.getSettlements();
+        List<SOCCity> ownedCities = board.getCities();
+        List<Integer> nodes = new ArrayList<Integer>(Collections.nCopies(256, 1));
+
+        for (SOCSettlement settlement : ownedSettlements) {
+            int coord = settlement.getCoordinates();
+//            List<Integer> adjacentNodes = board.getAdjacentNodesToNode(coord);
+//
+//            for (Integer node : adjacentNodes) {
+//                nodes.set(node, 0);
+//            }
+
+            nodes.set(coord, 0);
+        }
+
+        for (SOCCity city : ownedCities) {
+            int coord = city.getCoordinates();
+//            List<Integer> adjacentNodes = board.getAdjacentNodesToNode(coord);
+//
+//            for (Integer node : adjacentNodes) {
+//                nodes.set(node, 0);
+//            }
+
+            nodes.set(coord, 0);
+        }
+
+        for (int i = 0; i < nodes.size(); i++) {
+            nodeValidity += nodes.get(i).toString();
+            if (i < nodes.size() - 1) {
+                nodeValidity += "|";
+            }
+        }
+
+        return nodeValidity;
+    }
+
+    protected String generateRoadOwnership()
+    {
+        String roadOwnership = "";
+        SOCBoard board = game.getBoard();
+        List<SOCRoutePiece> ownedRoads = board.getRoadsAndShips();
+        List<Integer> roads = new ArrayList<Integer>(Collections.nCopies(256, 1));
+
+        for (SOCRoutePiece road : ownedRoads) {
+            int coord = road.getCoordinates();
+            Integer playerID = road.getPlayerNumber() + 1;
+
+            roads.set(coord, playerID);
+        }
+
+        for (int i = 0; i < roads.size(); i++) {
+            roadOwnership += roads.get(i).toString();
+            if (i < roads.size() - 1) {
+                roadOwnership += "|";
+            }
+        }
+
+        return roadOwnership;
     }
 }

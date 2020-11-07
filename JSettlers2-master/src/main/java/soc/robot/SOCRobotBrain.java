@@ -2367,7 +2367,7 @@ public class SOCRobotBrain extends Thread
      * @see #buildRequestPlannedPiece()
      * @since 1.1.09
      */
-    private void placeIfExpectPlacing()
+    protected void placeIfExpectPlacing()
     {
         if (waitingForGameState)
             return;
