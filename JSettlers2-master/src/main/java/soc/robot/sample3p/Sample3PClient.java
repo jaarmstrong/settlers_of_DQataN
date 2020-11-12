@@ -149,30 +149,40 @@ public class Sample3PClient extends SOCRobotClient
     {
         try{
             boolean isOver = false;
+            String victoryPoints = "";
+            Integer playerID;
+            String playerIDString = "";
             SOCGame ga = games.get(mes.getGame());
             int my_place = 1;
-            if (ga != null)
-            {
-                if (ga.getGameState() == SOCGame.OVER)
-                {
+            if (ga != null) {
+                if (ga.getGameState() == SOCGame.OVER) {
                     int my_score = ga.getPlayer(nickname).getTotalVP();
-                    for (int i = 0; i < 4; i++){
-                        if (ga.getPlayer(i).getPublicVP() > my_score){
+                    for (int i = 0; i < 4; i++) {
+                        if (ga.getPlayer(i).getPublicVP() > my_score) {
                             my_place += 1;
                         }
-                        if (ga.getPlayer(i).getPublicVP() == 10){
+                        if (ga.getPlayer(i).getPublicVP() >= ga.vp_winner) {
                             isOver = true;
                         }
                     }
 
                 }
+                for (int i = 0; i < 4; i++) {
+                    Integer playerScore = ga.getPlayer(i).getPublicVP();
+                    victoryPoints += playerScore.toString();
+                    if (i != 3) {
+                        victoryPoints += "|";
+                    }
+                }
+                playerID = ga.getPlayer(nickname).getPlayerNumber();
+                playerIDString = playerID.toString();
             }
             String resultData = Integer.toString(my_place);
             servercon = new Socket("localhost", 2004);
             servercon.setSoTimeout(300000);
             serverin = new DataInputStream(servercon.getInputStream());
             serverout = new DataOutputStream(servercon.getOutputStream());
-            serverout.writeUTF("end|" + Boolean.toString(isOver) + "|" + resultData);
+            serverout.writeUTF("end|" + Boolean.toString(isOver) + "|" + resultData + "|" + playerIDString + "|" + victoryPoints);
             serverout.flush();
             serverout.close();  
             servercon.close();
