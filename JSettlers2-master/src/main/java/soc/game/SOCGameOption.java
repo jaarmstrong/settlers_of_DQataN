@@ -537,7 +537,7 @@ public class SOCGameOption
         opt.put("NT", new SOCGameOption
                 ("NT", 1107, 1107, false, FLAG_DROP_IF_UNUSED, "No trading allowed between players"));
         opt.put("VP", new SOCGameOption
-                ("VP", -1, 1114, false, 10, 10, 15, FLAG_DROP_IF_UNUSED, "Victory points to win: #"));
+                ("VP", -1, 1114, false, 10, 3, 15, FLAG_DROP_IF_UNUSED, "Victory points to win: #"));
         final SOCGameOption sc = new SOCGameOption
                 ("SC", 2000, 2000, 8, false, FLAG_DROP_IF_UNUSED, "Game Scenario: #");
         opt.put("SC", sc);
