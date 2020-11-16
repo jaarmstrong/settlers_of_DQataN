@@ -47,7 +47,7 @@ import java.io.DataOutputStream;
 import java.lang.*;
 
 import java.net.Socket;
-
+import java.util.List;
 
 
 /**
@@ -147,6 +147,8 @@ public class Sample3PClient extends SOCRobotClient
     @Override
     protected void handleDELETEGAME(SOCDeleteGame mes)
     {
+        SOCRobotBrain brain = robotBrains.get(mes.getGame());
+
         try{
             boolean isOver = false;
             String victoryPoints = "";
@@ -182,9 +184,15 @@ public class Sample3PClient extends SOCRobotClient
             servercon.setSoTimeout(300000);
             serverin = new DataInputStream(servercon.getInputStream());
             serverout = new DataOutputStream(servercon.getOutputStream());
-            serverout.writeUTF("end|" + Boolean.toString(isOver) + "|" + resultData + "|" + playerIDString + "|" + victoryPoints);
+            String msg = "end|" + Boolean.toString(isOver) + "|" + resultData + "|" + playerIDString + "|" + victoryPoints;
+            List<String> messageHistory = brain.getMessageHistory();
+            for (String item : messageHistory) {
+                msg += "||" + item;
+            }
+            serverout.writeUTF(msg);
             serverout.flush();
-            serverout.close();  
+            serverout.close();
+            serverin.close();
             servercon.close();
             }
          catch(Exception e){
@@ -195,7 +203,7 @@ public class Sample3PClient extends SOCRobotClient
 
 
         //Run code from super()
-        SOCRobotBrain brain = robotBrains.get(mes.getGame());
+
 
         if (brain != null)
         {
@@ -221,7 +229,6 @@ public class Sample3PClient extends SOCRobotClient
             }
         }
     }
-
 
 
     /**

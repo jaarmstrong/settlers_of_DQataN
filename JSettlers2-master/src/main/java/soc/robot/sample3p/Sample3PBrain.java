@@ -35,6 +35,7 @@ import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Random;
 
 /**
  * Sample of a trivially simple "third-party" subclass of {@link SOCRobotBrain}
@@ -240,6 +241,11 @@ public class Sample3PBrain extends SOCRobotBrain
 //    }
 
     @Override
+    protected void saveMessage(String message) {
+        messageHistory.add(message);
+    }
+
+    @Override
     protected void placeIfExpectPlacing()
     {
         // msg = init_settlement | playerIndex | tileInfo[74] | nodeOwnership[256] | nodeValidity[256] | roadOwnership[256]
@@ -368,6 +374,11 @@ public class Sample3PBrain extends SOCRobotBrain
             //Receive decision from DQN server
             serverReturn = serverin.readLine();
 
+            if (serverReturn.equals("random_settlement")) {
+                Integer randomSettlement = getRandomSettlement();
+                serverReturn = randomSettlement.toString();
+            }
+
             serverout.flush();
             serverout.close();
             serverin.close();
@@ -375,6 +386,9 @@ public class Sample3PBrain extends SOCRobotBrain
         } catch (Exception e) {
             System.err.println("Whoops! Connection with server lost ... ");
         }
+
+        saveMessage(msg);
+        saveMessage(serverReturn);
 
         return serverReturn;
     }
@@ -492,5 +506,12 @@ public class Sample3PBrain extends SOCRobotBrain
         }
 
         return roadOwnership;
+    }
+
+    protected Integer getRandomSettlement()
+    {
+        final int[] potentialSettlements = ourPlayerData.getPotentialSettlements_arr();
+        Random random = new Random();
+        return potentialSettlements[random.nextInt(potentialSettlements.length)];
     }
 }

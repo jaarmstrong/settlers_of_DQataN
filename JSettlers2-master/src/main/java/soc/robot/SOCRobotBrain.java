@@ -5350,4 +5350,11 @@ public class SOCRobotBrain extends Thread
         }
     }
 
+
+    protected List<String> messageHistory = new ArrayList<String>();
+
+    protected void saveMessage(String messageHistory){}
+
+    public List<String> getMessageHistory() { return messageHistory; }
+
 }
