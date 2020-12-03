@@ -1,13 +1,15 @@
 import catan_messaging_from_jsettlers_py_file_v3 as dqn
 import pandas as pd
+import numpy as np
 import random
 import socket
 import os
 from datetime import datetime
+import keras
 
 
 class GamePregenerator():
-    def __init__(self, host, port, save_directory=None, save_interval=100, split_interval=1000, timeout=None):
+    def __init__(self, host, port, save_directory=None, save_interval=100, split_interval=1000, timeout=None, model=None):
         """
         Initialized pre-generator
         :param host: host JSettlers is running at.
@@ -22,6 +24,13 @@ class GamePregenerator():
         self.save_interval = save_interval
         self.split_interval = split_interval
         self.timeout = timeout
+
+        if model is None:
+            self.choose_random = True
+            self.model = None
+        else:
+            self.choose_random = False
+            self.model = keras.models.load_model(model)
 
         if save_directory is None:
             self.save_directory = datetime.now().strftime("%Y%m%d_%H%M%S") + "_game_logs"
@@ -87,23 +96,29 @@ class GamePregenerator():
         else:
             print("Incomplete message, not saving...")
 
-    def get_action(self, node_validity):
+    def get_action(self, state, node_validity):
         """
-        LEGACY. Functionality has been moved to JSettlers server, triggered by sending a "random_settlement" response in
-        place of a coordinate.
-        Generates a random action.
+        Generates an action using a supplied model.
+        :param state: Current state to generate action for.
         :param node_validity: Array of valid nodes, generated from init_settlement message.
-        :return: Chosen coordinate, as a base 10 integer.
+        :return: Chosen coordinate based on network prediction, both in python and java formats.
         """
+        state = np.array(state)
+        state = state.reshape((1, 91))
+
         available_filter = dqn.availability_filter(node_validity)
-        possible_actions = []
-        for index, validity in enumerate(available_filter):
-            if validity == 1:
-                possible_actions.append(index)
-        action = random.choice(possible_actions)
+        action_probs = np.copy(self.model.predict(np.array(state).reshape(-1, *state.shape))[0])
+
+        # Set impossible action probability to zero
+        for index, probability in enumerate(action_probs):
+            action_probs[index] = probability * available_filter[index]
+
+        # Select best action
+        print(action_probs)
+        action = np.argmax(action_probs)
 
         java_action = dqn.action_to_255(action)
-        return java_action
+        return action, java_action
 
     def handle_msg(self, msg):
         """
@@ -120,12 +135,20 @@ class GamePregenerator():
             msg_args = msg_history[0].split("|")
 
         if msg_args[0] == "init_settlement":
-            return "random_settlement"
+            if self.choose_random:
+                final_action = "random_settlement"
+            else:
+                player_num, tile_types, tile_dice, node_ownership, node_validity, road_ownership = dqn.interpret_settlement_init_message(msg_args)
+                simplified_ownership = dqn.simplify_ownership(node_ownership)
+                feat_vector = np.array([player_num] + tile_types + tile_dice + simplified_ownership)
+                action, java_action = self.get_action(feat_vector, node_validity)
+                final_action = java_action
+
+            return final_action
 
         elif msg_args[0] == "end":
-            if msg_args[1] == "true":
-                self.save_msg(msg_history)
-            else:
+            self.save_msg(msg_history)
+            if msg_args[1] != "true":
                 self.incomplete_games += 1
                 print("Incomplete game (total: {}), ignoring...".format(self.incomplete_games))
 
@@ -166,5 +189,6 @@ class GamePregenerator():
 
 
 if __name__ == "__main__":
-    server = GamePregenerator("localhost", 2004, timeout=120)
+    model_path = "models/2x256_____8.50max____5.12avg____1.75min__1606966201.model"
+    server = GamePregenerator("localhost", 2004, timeout=600, model=model_path)
     server.run()
