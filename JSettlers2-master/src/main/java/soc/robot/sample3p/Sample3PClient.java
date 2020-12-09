@@ -160,17 +160,17 @@ public class Sample3PClient extends SOCRobotClient
                 if (ga.getGameState() == SOCGame.OVER) {
                     int my_score = ga.getPlayer(nickname).getTotalVP();
                     for (int i = 0; i < 4; i++) {
-                        if (ga.getPlayer(i).getPublicVP() > my_score) {
+                        if (ga.getPlayer(i).getTotalVP() > my_score) {
                             my_place += 1;
                         }
-                        if (ga.getPlayer(i).getPublicVP() >= ga.vp_winner) {
+                        if (ga.getPlayer(i).getTotalVP() >= ga.vp_winner) {
                             isOver = true;
                         }
                     }
 
                 }
                 for (int i = 0; i < 4; i++) {
-                    Integer playerScore = ga.getPlayer(i).getPublicVP();
+                    Integer playerScore = ga.getPlayer(i).getTotalVP();
                     victoryPoints += playerScore.toString();
                     if (i != 3) {
                         victoryPoints += "|";
